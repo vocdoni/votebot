@@ -18,10 +18,11 @@ const (
 
 // Poll represents a poll with a question, options and duration
 type Poll struct {
-	ParentURL string
-	Question  string
-	Options   []string
-	Duration  time.Duration
+	Author      uint64
+	MessageHash []byte
+	Question    string
+	Options     []string
+	Duration    time.Duration
 }
 
 // ParsePoll parses a string message and returns a Poll struct with the
@@ -35,7 +36,7 @@ type Poll struct {
 // <duration*>
 // The duration is optional and by default is 24 hours. If the message does not
 // follow the format, an error is returned.
-func ParsePoll(parentURL, message string) (*Poll, error) {
+func ParsePoll(author uint64, messageHash []byte, message string) (*Poll, error) {
 	// create a flag to check if the command has been recognised
 	recognisedCommand := false
 	// create vars to store the question, options and duration
@@ -118,9 +119,10 @@ func ParsePoll(parentURL, message string) (*Poll, error) {
 	}
 	// return the results
 	return &Poll{
-		ParentURL: parentURL,
-		Question:  strings.TrimSuffix(question, lineBreakSuffix),
-		Options:   options,
-		Duration:  duration,
+		Author:      author,
+		MessageHash: messageHash,
+		Question:    strings.TrimSuffix(question, lineBreakSuffix),
+		Options:     options,
+		Duration:    duration,
 	}, nil
 }

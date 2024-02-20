@@ -1,5 +1,10 @@
 package bot
 
+import (
+	"encoding/hex"
+	"strings"
+)
+
 const (
 	MESSAGE_TYPE_CAST_ADD = "MESSAGE_TYPE_CAST_ADD"
 )
@@ -17,7 +22,8 @@ type MessageData struct {
 }
 
 type Message struct {
-	Data *MessageData `json:"data"`
+	Data    *MessageData `json:"data"`
+	HexHash string       `json:"hash"`
 }
 
 func (m *Message) IsMention() bool {
@@ -28,6 +34,11 @@ func (m *Message) Mention() string {
 	return m.Data.CastAddBody.Text
 }
 
-func (m *Message) ParentURL() string {
-	return m.Data.CastAddBody.ParentURL
+func (m *Message) Author() uint64 {
+	return m.Data.From
+}
+
+func (m *Message) Hash() ([]byte, error) {
+	hash := strings.TrimPrefix(m.HexHash, "0x")
+	return hex.DecodeString(hash)
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,7 +20,7 @@ const (
 	ENDPOINT_CAST_BY_MENTION = "castsByMention?fid=%d"
 	ENDPOINT_SUBMIT_MESSAGE  = "submitMessage"
 	// timeouts
-	getCastByMentionTimeout = 15 * time.Second
+	getCastByMentionTimeout = 1 * time.Minute
 )
 
 type CastByMentionsResponse struct {
@@ -81,12 +80,17 @@ func (b *Bot) GetLastsMentions(timestamp uint64) ([]*Message, uint64, error) {
 	return filteredMessages, lastTimestamp, nil
 }
 
-func (b *Bot) Reply(parentURL, text string) {
+func (b *Bot) Reply(targetFid uint64, targetHash []byte, text string) {
 	// create the cast as a reply to the message with the parentFID provided
 	// and the desired text
 	castAdd := &protobufs.CastAddBody{
-		Text:   text,
-		Parent: &protobufs.CastAddBody_ParentUrl{parentURL},
+		Text: text,
+		Parent: &protobufs.CastAddBody_ParentCastId{
+			ParentCastId: &protobufs.CastId{
+				Fid:  targetFid,
+				Hash: targetHash,
+			},
+		},
 	}
 	// compose the message data with the message type, the bot FID, the current
 	// timestamp, the network, and the cast add body
@@ -111,19 +115,15 @@ func (b *Bot) Reply(parentURL, text string) {
 	msg := &protobufs.Message{
 		HashScheme:      protobufs.HashScheme_HASH_SCHEME_BLAKE3,
 		Hash:            hash,
-		Data:            msgData,
 		SignatureScheme: protobufs.SignatureScheme_SIGNATURE_SCHEME_ED25519,
 	}
 	// sign the message with the private key
 	privateKey := ed25519.NewKeyFromSeed(b.privKey)
-	log.Info(hex.EncodeToString(privateKey.Public().(ed25519.PublicKey)))
 	signature := ed25519.Sign(privateKey, msgDataBytes)
-
-	log.Info(hex.EncodeToString(msgDataBytes))
-	log.Info(hex.EncodeToString(signature))
+	signer := privateKey.Public().(ed25519.PublicKey)
 	// set the signature and the signer to the message
 	msg.Signature = signature
-	msg.Signer = privateKey.Public().(ed25519.PublicKey)
+	msg.Signer = signer
 	// set the message data bytes to the message and marshal the message
 	msg.DataBytes = msgDataBytes
 	msgBytes, err := proto.Marshal(msg)
@@ -142,7 +142,7 @@ func (b *Bot) Reply(parentURL, text string) {
 	req.Header.Set("Content-Type", "application/octet-stream")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatalf("error submitting the message: %s", err)
+		log.Errorf("error submitting the message: %s", err)
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {
@@ -150,6 +150,6 @@ func (b *Bot) Reply(parentURL, text string) {
 		}
 	}()
 	if res.StatusCode != http.StatusOK {
-		log.Fatalf("error submitting the message: %s", res.Status)
+		log.Errorf("error submitting the message: %s", res.Status)
 	}
 }

@@ -59,8 +59,8 @@ func New(config BotConfig) (*Bot, error) {
 	if err != nil {
 		return nil, errors.Join(ErrDecodingPrivateKey, err)
 	}
-	lastCast := uint64(time.Now().Unix() - farcasterEpoch)
-	lastCast = 0
+	// lastCast := uint64(time.Now().Unix() - farcasterEpoch)
+	lastCast := uint64(0)
 	return &Bot{
 		fid:         config.BotFID,
 		privKey:     privKey,
@@ -101,11 +101,16 @@ func (b *Bot) Start(ctx context.Context) {
 				}
 				b.lastCast = lastCast
 				if len(messages) > 0 {
-					for _, message := range messages {
-						// parse message
-						poll, err := ParsePoll(message.ParentURL(), message.Mention())
+					for _, msg := range messages {
+						messageHash, err := msg.Hash()
 						if err != nil {
-							log.Errorf("error parsing poll from message '%s': %s", message.Mention(), err)
+							log.Errorf("error decoding message hash: %s", err)
+							continue
+						}
+						// parse message
+						poll, err := ParsePoll(msg.Author(), messageHash, msg.Mention())
+						if err != nil {
+							log.Errorf("error parsing poll from message '%s': %s", msg.Mention(), err)
 							continue
 						}
 						// send poll to the channel
@@ -128,14 +133,13 @@ func (b *Bot) Start(ctx context.Context) {
 				return
 			case poll := <-b.polls:
 				b.callbackMtx.Lock()
-				if b.callback != nil {
-					res, err := (*b.callback)(poll)
+				if cb := b.callback; cb != nil {
+					res, err := (*cb)(poll)
 					if err != nil {
 						log.Errorf("error executing callback: %s", err)
 						continue
 					}
-					log.Infow("callback executed, sending response", "response", res)
-					b.Reply(poll.ParentURL, res)
+					b.Reply(poll.Author, poll.MessageHash, res)
 				}
 				b.callbackMtx.Unlock()
 			}
