@@ -1,6 +1,6 @@
-# OnVote Farcaster Bot
+# VoteBot: onvote Farcaster Bot
 
-Simple [Warpcast](https://warpcast.com/) bot to create polls frames using [farcaster.vote].
+Simple [Warpcast](https://warpcast.com/) bot to create polls frames using [farcaster.vote](https://farcaster.vote/app), an [onvote](https://onvote.app/) experiment.
 
 ## Usage
 
