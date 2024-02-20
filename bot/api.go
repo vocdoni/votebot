@@ -20,20 +20,35 @@ const (
 	ENDPOINT_CAST_BY_MENTION = "castsByMention?fid=%d"
 	ENDPOINT_SUBMIT_MESSAGE  = "submitMessage"
 	// timeouts
-	getCastByMentionTimeout = 1 * time.Minute
+	getCastByMentionTimeout = 15 * time.Second
+	submitMessageTimeout    = 5 * time.Minute
 )
 
 type CastByMentionsResponse struct {
 	Messages []*Message `json:"messages"`
 }
 
+func (b *Bot) newRequest(ctx context.Context, method string, uri string, body io.Reader) (*http.Request, error) {
+	endpoint := fmt.Sprintf("%s/%s", b.endpoint, uri)
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	if b.auth != nil {
+		for k, v := range b.auth {
+			req.Header.Set(k, v)
+		}
+	}
+	return req, nil
+}
+
 func (b *Bot) GetLastsMentions(timestamp uint64) ([]*Message, uint64, error) {
 	internalCtx, cancel := context.WithTimeout(b.ctx, getCastByMentionTimeout)
 	defer cancel()
 	// download de json from API endpoint
-	baseEndpoint := fmt.Sprintf("%s/%s", b.endpoint, ENDPOINT_CAST_BY_MENTION)
-	endpoint := fmt.Sprintf(baseEndpoint, b.fid)
-	req, err := http.NewRequestWithContext(internalCtx, http.MethodGet, endpoint, nil)
+	uri := fmt.Sprintf(ENDPOINT_CAST_BY_MENTION, b.fid)
+	req, err := b.newRequest(internalCtx, http.MethodGet, uri, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("error creating request: %w", err)
 	}
@@ -80,17 +95,20 @@ func (b *Bot) GetLastsMentions(timestamp uint64) ([]*Message, uint64, error) {
 	return filteredMessages, lastTimestamp, nil
 }
 
-func (b *Bot) Reply(targetFid uint64, targetHash []byte, text string) {
+func (b *Bot) ReplyFrameURL(targetFid uint64, targetHash []byte, url string) {
+	msgText := fmt.Sprintf(" here is your frame url: %s", url)
 	// create the cast as a reply to the message with the parentFID provided
 	// and the desired text
 	castAdd := &protobufs.CastAddBody{
-		Text: text,
-		Parent: &protobufs.CastAddBody_ParentCastId{
-			ParentCastId: &protobufs.CastId{
-				Fid:  targetFid,
-				Hash: targetHash,
-			},
-		},
+		Text:              msgText,
+		Mentions:          []uint64{targetFid},
+		MentionsPositions: []uint32{0},
+		// Parent: &protobufs.CastAddBody_ParentCastId{
+		// 	ParentCastId: &protobufs.CastId{
+		// 		Fid:  targetFid,
+		// 		Hash: targetHash,
+		// 	},
+		// },
 	}
 	// compose the message data with the message type, the bot FID, the current
 	// timestamp, the network, and the cast add body
@@ -131,11 +149,10 @@ func (b *Bot) Reply(targetFid uint64, targetHash []byte, text string) {
 		log.Fatalf("error marshalling message: %s", err)
 	}
 	// create a new context with a timeout
-	internalCtx, cancel := context.WithTimeout(b.ctx, getCastByMentionTimeout)
+	internalCtx, cancel := context.WithTimeout(b.ctx, submitMessageTimeout)
 	defer cancel()
 	// submit the message to the API endpoint
-	endpoint := fmt.Sprintf("%s/%s", b.endpoint, ENDPOINT_SUBMIT_MESSAGE)
-	req, err := http.NewRequestWithContext(internalCtx, http.MethodPost, endpoint, bytes.NewBuffer(msgBytes))
+	req, err := b.newRequest(internalCtx, http.MethodPost, ENDPOINT_SUBMIT_MESSAGE, bytes.NewBuffer(msgBytes))
 	if err != nil {
 		log.Fatalf("error creating request: %s", err)
 	}

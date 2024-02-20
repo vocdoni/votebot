@@ -21,9 +21,9 @@ func main() {
 
 	voteBot, err := bot.New(bot.BotConfig{
 		BotFID:     0,
-		Endpoint:   "",
+		Endpoint:   "https://hub.freefarcasterhub.com:3281",
 		CoolDown:   time.Second * 30,
-		PrivateKey: "",
+		PrivateKey: "0x0",
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -31,7 +31,7 @@ func main() {
 
 	voteBot.SetCallback(func(poll *bot.Poll) (string, error) {
 		log.Infow("poll received", "poll", poll)
-		return "poll received", nil
+		return "https://farcaster.vote/app", nil
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

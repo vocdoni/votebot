@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ const (
 type BotConfig struct {
 	BotFID     uint64
 	Endpoint   string
+	Auth       map[string]string
 	CoolDown   time.Duration
 	PrivateKey string
 }
@@ -31,6 +33,7 @@ type Bot struct {
 	fid         uint64
 	privKey     []byte
 	endpoint    string
+	auth        map[string]string
 	ctx         context.Context
 	cancel      context.CancelFunc
 	waiter      sync.WaitGroup
@@ -55,7 +58,8 @@ func New(config BotConfig) (*Bot, error) {
 	if config.CoolDown == 0 {
 		config.CoolDown = defaultCoolDown
 	}
-	privKey, err := hex.DecodeString(config.PrivateKey)
+	strPrivKey := strings.TrimPrefix(config.PrivateKey, "0x")
+	privKey, err := hex.DecodeString(strPrivKey)
 	if err != nil {
 		return nil, errors.Join(ErrDecodingPrivateKey, err)
 	}
@@ -65,6 +69,7 @@ func New(config BotConfig) (*Bot, error) {
 		fid:         config.BotFID,
 		privKey:     privKey,
 		endpoint:    config.Endpoint,
+		auth:        config.Auth,
 		waiter:      sync.WaitGroup{},
 		polls:       make(chan *Poll),
 		coolDown:    config.CoolDown,
@@ -134,12 +139,12 @@ func (b *Bot) Start(ctx context.Context) {
 			case poll := <-b.polls:
 				b.callbackMtx.Lock()
 				if cb := b.callback; cb != nil {
-					res, err := (*cb)(poll)
+					frameURL, err := (*cb)(poll)
 					if err != nil {
 						log.Errorf("error executing callback: %s", err)
 						continue
 					}
-					b.Reply(poll.Author, poll.MessageHash, res)
+					b.ReplyFrameURL(poll.Author, poll.MessageHash, frameURL)
 				}
 				b.callbackMtx.Unlock()
 			}
