@@ -8,8 +8,8 @@ Simple [Warpcast](https://warpcast.com/) bot to create polls frames using [farca
 
 * Go (>= 1.21.7)
 * Warpcast account for the bot
-* Farcaster Hub HTTP Enpoint (**optional, a public one is used by default*)
-* Neynar account (**optional*, only for `neynar` mode)
+* [Farcaster Hub](https://github.com/farcasterxyz/hub-monorepo) HTTP Enpoint (**optional*, a public one is used by default for `hub` mode)
+* [Neynar](https://neynar.com/) account (**optional*, only for `neynar` mode)
 
 ### Run with neynar
 
@@ -21,6 +21,10 @@ go run cmd/votebot/main.go \
     -neynarAPIKey <api_key>
 #   -neynarEndpoint https://api.neynar.com/v2
 ```
+
+#### Creating a Neynar signer
+
+Follow these steps from [Neynar Official Docs](https://docs.neynar.com/docs/farcaster-bot-with-dedicated-signers).
 
 ### Run with your own hub
 
