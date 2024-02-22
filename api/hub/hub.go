@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	farcasterEpoch           int64 = 1609459200 // January 1, 2021 UTC
-	ENDPOINT_CAST_BY_MENTION       = "castsByMention?fid=%d"
-	ENDPOINT_SUBMIT_MESSAGE        = "submitMessage"
+	farcasterEpoch           uint64 = 1609459200 // January 1, 2021 UTC
+	ENDPOINT_CAST_BY_MENTION        = "castsByMention?fid=%d"
+	ENDPOINT_SUBMIT_MESSAGE         = "submitMessage"
 	// timeouts
 	getCastByMentionTimeout = 15 * time.Second
 	submitMessageTimeout    = 5 * time.Minute
@@ -63,7 +63,12 @@ func (h *Hub) Init(args ...any) error {
 	return nil
 }
 
+func (h *Hub) Stop() error {
+	return nil
+}
+
 func (h *Hub) LastMentions(ctx context.Context, timestamp uint64) ([]api.APIMessage, uint64, error) {
+	timestamp -= farcasterEpoch
 	internalCtx, cancel := context.WithTimeout(ctx, getCastByMentionTimeout)
 	defer cancel()
 	// download de json from API endpoint
@@ -102,15 +107,11 @@ func (h *Hub) LastMentions(ctx context.Context, timestamp uint64) ([]api.APIMess
 			continue
 		}
 		if m.Data.Timestamp > timestamp {
-			hash, err := hex.DecodeString(strings.TrimPrefix(m.HexHash, "0x"))
-			if err != nil {
-				return nil, 0, fmt.Errorf("error decoding message hash: %s", err)
-			}
 			messages = append(messages, api.APIMessage{
 				IsMention: true,
 				Content:   m.Data.CastAddBody.Text,
 				Author:    m.Data.From,
-				Hash:      hash,
+				Hash:      m.HexHash,
 			})
 			if m.Data.Timestamp > lastTimestamp {
 				lastTimestamp = m.Data.Timestamp
@@ -122,12 +123,16 @@ func (h *Hub) LastMentions(ctx context.Context, timestamp uint64) ([]api.APIMess
 		return nil, timestamp, fmt.Errorf("no new casts")
 	}
 	// return the filtered messages and the last timestamp
-	return messages, lastTimestamp, nil
+	return messages, lastTimestamp + farcasterEpoch, nil
 }
 
-func (h *Hub) Reply(ctx context.Context, targetFid uint64, targetHash []byte, content string) error {
+func (h *Hub) Reply(ctx context.Context, targetFid uint64, targetHash string, content string) error {
 	// create the cast as a reply to the message with the parentFID provided
 	// and the desired text
+	bTargetHash, err := hex.DecodeString(strings.TrimPrefix(targetHash, "0x"))
+	if err != nil {
+		return fmt.Errorf("error decoding target hash: %s", err)
+	}
 	castAdd := &protobufs.CastAddBody{
 		Text: content,
 		// Mentions:          []uint64{targetFid},
@@ -135,7 +140,7 @@ func (h *Hub) Reply(ctx context.Context, targetFid uint64, targetHash []byte, co
 		Parent: &protobufs.CastAddBody_ParentCastId{
 			ParentCastId: &protobufs.CastId{
 				Fid:  targetFid,
-				Hash: targetHash,
+				Hash: bTargetHash,
 			},
 		},
 	}
@@ -144,7 +149,7 @@ func (h *Hub) Reply(ctx context.Context, targetFid uint64, targetHash []byte, co
 	msgData := &protobufs.MessageData{
 		Type:      protobufs.MessageType_MESSAGE_TYPE_CAST_ADD,
 		Fid:       h.fid,
-		Timestamp: uint32(time.Now().Unix() - farcasterEpoch),
+		Timestamp: uint32(uint64(time.Now().Unix()) - farcasterEpoch),
 		Network:   protobufs.FarcasterNetwork_FARCASTER_NETWORK_MAINNET,
 		Body:      &protobufs.MessageData_CastAddBody{castAdd},
 	}

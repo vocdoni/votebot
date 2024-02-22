@@ -7,24 +7,31 @@ Simple [Warpcast](https://warpcast.com/) bot to create polls frames using [farca
 ### Requirements
 
 * Go (>= 1.21.7)
-* Warpcast account for the bot.
-* Farcaster Hub HTTP Enpoint (**optional, a public one is used by default*).
+* Warpcast account for the bot
+* Farcaster Hub HTTP Enpoint (**optional, a public one is used by default*)
+* Neynar account (**optional*, only for `neynar` mode)
 
-### Basic example 
+### Run with neynar
 
 ```sh
 go run cmd/votebot/main.go \
     -botFid <existing_user_id> \
-    -privateKey <user_signer_private_key>
+    -mode neynar \
+    -neynarSignerUUID <signer_uuid> \
+    -neynarAPIKey <api_key>
+#   -neynarEndpoint https://api.neynar.com/v2
 ```
 
-### Use your own hub
+### Run with your own hub
 
 ```sh
 go run cmd/votebot/main.go \
     -botFid <existing_user_id> \
-    -privateKey <user_signer_private_key> \
-    -endpoint <farcaster_hub_http_url>
+    -mode hub \
+    -hubPrivateKey <user_signer_private_key>
+#   -hubEndpoint https://hub.freefarcasterhub.com:3281
+#   -hubAuthHeaders <auth_headers_keys>
+#   -hubAuthKeys <auth_keys>
 ```
 
 For example, `debug` over [neynar hub](https://neynar.com/):
@@ -32,11 +39,12 @@ For example, `debug` over [neynar hub](https://neynar.com/):
 ```sh
 go run cmd/votebot/main.go \
     -logLevel debug \
-     -botFid <existing_user_id> \
-    -privateKey <user_signer_private_key> \
-    -endpoint https://hub-api.neynar.com/v1 \
-    -authHeaders api_key \
-    -authKeys <neynar_api_key>
+    -botFid <existing_user_id> \
+    -mode hub \
+    -hubPrivateKey <user_signer_private_key> \
+    -hubEndpoint https://hub-api.neynar.com/v1 \
+    -hubAuthHeaders api_key \
+    -hubAuthKeys <neynar_api_key>
 ```
 
 #### Creating a new signer to your FID

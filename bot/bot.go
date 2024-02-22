@@ -11,7 +11,7 @@ import (
 )
 
 // defaultCoolDown is the default time to wait between casts
-const defaultCoolDown = time.Second * 10
+const defaultCoolDown = time.Second * 30
 
 type BotConfig struct {
 	API      api.API
@@ -45,15 +45,13 @@ func New(config BotConfig) (*Bot, error) {
 	if config.CoolDown == 0 {
 		config.CoolDown = defaultCoolDown
 	}
-	// lastCast := uint64(time.Now().Unix() - farcasterEpoch)
-	lastCast := uint64(0)
 	return &Bot{
 		api:         config.API,
 		fid:         config.BotFID,
 		waiter:      sync.WaitGroup{},
 		polls:       make(chan *Poll),
 		coolDown:    config.CoolDown,
-		lastCast:    lastCast,
+		lastCast:    uint64(time.Now().Unix()),
 		callback:    nil,
 		callbackMtx: sync.Mutex{},
 	}, nil
@@ -80,18 +78,17 @@ func (b *Bot) Start(ctx context.Context) {
 			default:
 				log.Debugw("checking for new casts", "last-cast", b.lastCast)
 				// retrieve new messages from the last cast
-				messages, _, err := b.api.LastMentions(b.ctx, b.lastCast)
-				// messages, lastCast, err := b.GetLastsMentions(b.lastCast)
+				messages, lastCast, err := b.api.LastMentions(b.ctx, b.lastCast)
 				if err != nil && err != ErrNoNewCasts {
 					log.Errorf("error retrieving new casts: %s", err)
 				}
-				// b.lastCast = lastCast
+				b.lastCast = lastCast
 				if len(messages) > 0 {
 					for _, msg := range messages {
 						// parse message
 						poll, err := ParsePoll(msg.Author, msg.Hash, msg.Content)
 						if err != nil {
-							log.Errorf("error parsing poll from message '%s': %s", msg.Content, err)
+							log.Errorf("error parsing poll from message: %s", err)
 							continue
 						}
 						// send poll to the channel
@@ -115,14 +112,16 @@ func (b *Bot) Start(ctx context.Context) {
 			case poll := <-b.polls:
 				b.callbackMtx.Lock()
 				if cb := b.callback; cb != nil {
-					frameURL, err := (*cb)(poll)
+					url, err := (*cb)(poll)
 					if err != nil {
 						log.Errorf("error executing callback: %s", err)
 						continue
 					}
-					if err := b.api.Reply(ctx, poll.Author, poll.MessageHash, frameURL); err != nil {
+					if err := b.api.Reply(ctx, poll.Author, poll.MessageHash, url); err != nil {
 						log.Errorf("error replying to poll: %s", err)
+						continue
 					}
+					log.Infow("replied to poll", "poll", poll, "url", url)
 				}
 				b.callbackMtx.Unlock()
 			}
@@ -131,6 +130,9 @@ func (b *Bot) Start(ctx context.Context) {
 }
 
 func (b *Bot) Stop() {
+	if err := b.api.Stop(); err != nil {
+		log.Errorf("error stopping bot: %s", err)
+	}
 	b.cancel()
 	close(b.polls)
 }
