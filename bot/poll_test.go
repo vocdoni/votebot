@@ -73,30 +73,30 @@ var (
 func TestParsePoll(t *testing.T) {
 	c := qt.New(t)
 
-	correctPoll, err := ParsePoll("", correctMessage)
+	correctPoll, err := ParsePoll(0, nil, correctMessage)
 	c.Assert(err, qt.IsNil)
 	c.Assert(correctPoll.Question, qt.Equals, expectedCorrectPoll.Question)
 	c.Assert(correctPoll.Options, qt.ContentEquals, expectedCorrectPoll.Options)
 	c.Assert(correctPoll.Duration, qt.Equals, expectedCorrectPoll.Duration)
 
-	noDurationPoll, err := ParsePoll("", noDurationMessage)
+	noDurationPoll, err := ParsePoll(0, nil, noDurationMessage)
 	c.Assert(err, qt.IsNil)
 	c.Assert(noDurationPoll.Question, qt.Equals, expectedNoDurationPoll.Question)
 	c.Assert(noDurationPoll.Options, qt.ContentEquals, expectedNoDurationPoll.Options)
 	c.Assert(noDurationPoll.Duration, qt.Equals, expectedNoDurationPoll.Duration)
 
-	nonDefaultDurationPoll, err := ParsePoll("", nonDefaultDurationMessage)
+	nonDefaultDurationPoll, err := ParsePoll(0, nil, nonDefaultDurationMessage)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nonDefaultDurationPoll.Question, qt.Equals, expectedNonDefaultDurationPoll.Question)
 	c.Assert(nonDefaultDurationPoll.Options, qt.ContentEquals, expectedNonDefaultDurationPoll.Options)
 	c.Assert(nonDefaultDurationPoll.Duration, qt.Equals, expectedNonDefaultDurationPoll.Duration)
 
-	_, err = ParsePoll("", notEnoughOptionsMessage)
+	_, err = ParsePoll(0, nil, notEnoughOptionsMessage)
 	c.Assert(err, qt.ErrorIs, ErrMinOptionsNotReached)
 
-	_, err = ParsePoll("", tooManyOptionsMessage)
+	_, err = ParsePoll(0, nil, tooManyOptionsMessage)
 	c.Assert(err, qt.ErrorIs, ErrMaxOptionsReached)
 
-	_, err = ParsePoll("", invalidDurationMessage)
+	_, err = ParsePoll(0, nil, invalidDurationMessage)
 	c.Assert(err, qt.ErrorIs, ErrParsingDuration)
 }

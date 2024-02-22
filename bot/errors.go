@@ -3,7 +3,7 @@ package bot
 import "fmt"
 
 var (
-	ErrDataDirNotSet        = fmt.Errorf("data dir not set")
+	ErrAPINotSet            = fmt.Errorf("api not set")
 	ErrBotFIDNotSet         = fmt.Errorf("bot fid not set")
 	ErrPrivateKeyNotSet     = fmt.Errorf("private key not set")
 	ErrDecodingPrivateKey   = fmt.Errorf("error decoding provided private key")

@@ -3,37 +3,27 @@ package bot
 import (
 	"context"
 	_ "embed"
-	"encoding/hex"
-	"errors"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/vocdoni/votebot/api"
 	"go.vocdoni.io/dvote/log"
 )
 
-const (
-	farcasterEpoch int64 = 1609459200 // January 1, 2021 UTC
-	lastCastFile         = "lastcast.txt"
-	// defaultCoolDown is the default time to wait between casts
-	defaultCoolDown = time.Second * 10
-)
+// defaultCoolDown is the default time to wait between casts
+const defaultCoolDown = time.Second * 10
 
 type BotConfig struct {
-	BotFID     uint64
-	Endpoint   string
-	Auth       map[string]string
-	CoolDown   time.Duration
-	PrivateKey string
+	API      api.API
+	BotFID   uint64
+	CoolDown time.Duration
 }
 
 type PollCallback func(*Poll) (string, error)
 
 type Bot struct {
+	api         api.API
 	fid         uint64
-	privKey     []byte
-	endpoint    string
-	auth        map[string]string
 	ctx         context.Context
 	cancel      context.CancelFunc
 	waiter      sync.WaitGroup
@@ -46,30 +36,20 @@ type Bot struct {
 
 func New(config BotConfig) (*Bot, error) {
 	log.Infow("initializing bot", "config", config)
+	if config.API == nil {
+		return nil, ErrAPINotSet
+	}
 	if config.BotFID == 0 {
 		return nil, ErrBotFIDNotSet
-	}
-	if config.PrivateKey == "" {
-		return nil, ErrPrivateKeyNotSet
-	}
-	if config.Endpoint == "" {
-		return nil, ErrEndpointNotSet
 	}
 	if config.CoolDown == 0 {
 		config.CoolDown = defaultCoolDown
 	}
-	strPrivKey := strings.TrimPrefix(config.PrivateKey, "0x")
-	privKey, err := hex.DecodeString(strPrivKey)
-	if err != nil {
-		return nil, errors.Join(ErrDecodingPrivateKey, err)
-	}
 	// lastCast := uint64(time.Now().Unix() - farcasterEpoch)
 	lastCast := uint64(0)
 	return &Bot{
+		api:         config.API,
 		fid:         config.BotFID,
-		privKey:     privKey,
-		endpoint:    config.Endpoint,
-		auth:        config.Auth,
 		waiter:      sync.WaitGroup{},
 		polls:       make(chan *Poll),
 		coolDown:    config.CoolDown,
@@ -100,22 +80,18 @@ func (b *Bot) Start(ctx context.Context) {
 			default:
 				log.Debugw("checking for new casts", "last-cast", b.lastCast)
 				// retrieve new messages from the last cast
-				messages, lastCast, err := b.GetLastsMentions(b.lastCast)
+				messages, _, err := b.api.LastMentions(b.ctx, b.lastCast)
+				// messages, lastCast, err := b.GetLastsMentions(b.lastCast)
 				if err != nil && err != ErrNoNewCasts {
 					log.Errorf("error retrieving new casts: %s", err)
 				}
-				b.lastCast = lastCast
+				// b.lastCast = lastCast
 				if len(messages) > 0 {
 					for _, msg := range messages {
-						messageHash, err := msg.Hash()
-						if err != nil {
-							log.Errorf("error decoding message hash: %s", err)
-							continue
-						}
 						// parse message
-						poll, err := ParsePoll(msg.Author(), messageHash, msg.Mention())
+						poll, err := ParsePoll(msg.Author, msg.Hash, msg.Content)
 						if err != nil {
-							log.Errorf("error parsing poll from message '%s': %s", msg.Mention(), err)
+							log.Errorf("error parsing poll from message '%s': %s", msg.Content, err)
 							continue
 						}
 						// send poll to the channel
@@ -144,7 +120,9 @@ func (b *Bot) Start(ctx context.Context) {
 						log.Errorf("error executing callback: %s", err)
 						continue
 					}
-					b.ReplyFrameURL(poll.Author, poll.MessageHash, frameURL)
+					if err := b.api.Reply(ctx, poll.Author, poll.MessageHash, frameURL); err != nil {
+						log.Errorf("error replying to poll: %s", err)
+					}
 				}
 				b.callbackMtx.Unlock()
 			}
