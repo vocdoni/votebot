@@ -18,6 +18,7 @@ const (
 	neynarGetUsernameEndpoint = "v1/farcaster/user?fid=%d"
 	neynarGetCastsEndpoint    = "v1/farcaster/mentions-and-replies?fid=%d&limit=150&cursor=%s"
 	neynarReplyEndpoint       = "v2/farcaster/cast"
+	neynarUserByEthAddresses  = "v2/farcaster/user/bulk-by-address?addresses=%s"
 	// timeouts
 	getBotUsernameTimeout   = 10 * time.Second
 	getCastByMentionTimeout = 60 * time.Second
@@ -61,7 +62,7 @@ func (n *NeynarAPI) Init(args ...any) error {
 	var err error
 	ctx, cancel := context.WithTimeout(context.Background(), getBotUsernameTimeout)
 	defer cancel()
-	userdata, err := n.UserData(ctx, n.fid)
+	userdata, err := n.UserDataByFID(ctx, n.fid)
 	if err != nil {
 		return fmt.Errorf("error getting bot username: %w", err)
 	}
@@ -127,7 +128,8 @@ func (n *NeynarAPI) LastMentions(ctx context.Context, timestamp uint64) ([]*api.
 			}
 			// parse the text to remove the bot username and add mention to the
 			// list
-			text := strings.TrimSpace(strings.TrimPrefix(notification.Text, n.username))
+			mention := fmt.Sprintf("@%s", n.username)
+			text := strings.TrimSpace(strings.TrimPrefix(notification.Text, mention))
 			messages = append(messages, &api.APIMessage{
 				IsMention: true,
 				Author:    notification.Author.FID,
@@ -183,13 +185,13 @@ func (n *NeynarAPI) Reply(ctx context.Context, fid uint64, parentHash, content s
 // UserData method returns the username, the custody address and the
 // verification addresses of the user with the given fid. If something goes
 // wrong, it returns an error.
-func (n *NeynarAPI) UserData(ctx context.Context, fid uint64) (*api.Userdata, error) {
+func (n *NeynarAPI) UserDataByFID(ctx context.Context, fid uint64) (*api.Userdata, error) {
 	internalCtx, cancel := context.WithTimeout(ctx, getBotUsernameTimeout)
 	defer cancel()
 
 	// create request with the bot fid
 	baseURL := fmt.Sprintf("%s/%s", n.endpoint, neynarGetUsernameEndpoint)
-	url := fmt.Sprintf(baseURL, n.fid)
+	url := fmt.Sprintf(baseURL, fid)
 	req, err := http.NewRequestWithContext(internalCtx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
@@ -219,5 +221,57 @@ func (n *NeynarAPI) UserData(ctx context.Context, fid uint64) (*api.Userdata, er
 		Username:               usernameResponse.Result.User.Username,
 		CustodyAddress:         usernameResponse.Result.User.CustodyAddress,
 		VerificationsAddresses: usernameResponse.Result.User.VerificationsAddresses,
+	}, nil
+}
+
+func (n *NeynarAPI) UserDataByVerificationAddress(ctx context.Context, address string) (*api.Userdata, error) {
+	internalCtx, cancel := context.WithTimeout(ctx, getBotUsernameTimeout)
+	defer cancel()
+
+	baseURL := fmt.Sprintf("%s/%s", n.endpoint, neynarUserByEthAddresses)
+	url := fmt.Sprintf(baseURL, address)
+	req, err := http.NewRequestWithContext(internalCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+	req.Header.Set("api_key", n.apiKey)
+	// send request and check response status
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error downloading json: %w", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error downloading json: %s", res.Status)
+	}
+	// read response body
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %w", err)
+	}
+	defer res.Body.Close()
+	// decode username
+	results := map[string][]*UserdataV2{}
+	if err := json.Unmarshal(body, &results); err != nil {
+		return nil, fmt.Errorf("error unmarshalling response body: %w", err)
+	}
+	dataItems, ok := results[address]
+	if !ok || len(dataItems) == 0 {
+		return nil, fmt.Errorf("no data found for the given address")
+	}
+	var data *UserdataV2
+	for _, item := range dataItems {
+		if item.Username != "" {
+			data = item
+			break
+		}
+	}
+	if data == nil {
+		return nil, fmt.Errorf("no valid data found for the given address")
+	}
+	return &api.Userdata{
+		FID:                    data.FID,
+		Username:               data.Username,
+		CustodyAddress:         data.CustodyAddress,
+		VerificationsAddresses: data.VerificationsAddresses,
 	}, nil
 }

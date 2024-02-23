@@ -21,10 +21,11 @@ import (
 
 const (
 	// endpoints
-	ENDPOINT_CAST_BY_MENTION = "castsByMention?fid=%d"
-	ENDPOINT_SUBMIT_MESSAGE  = "submitMessage"
-	ENDPOINT_USERNAME_PROOFS = "userNameProofsByFid?fid=%d"
-	ENDPOINT_VERIFICATIONS   = "verificationsByFid?fid=%d"
+	ENDPOINT_CAST_BY_MENTION       = "castsByMention?fid=%d"
+	ENDPOINT_SUBMIT_MESSAGE        = "submitMessage"
+	ENDPOINT_USERNAME_PROOFS       = "userNameProofsByFid?fid=%d"
+	ENDPOINT_VERIFICATIONS         = "verificationsByFid?fid=%d"
+	ENDPOINT_IDREGISTRY_BY_ADDRESS = "onChainIdRegistryEventByAddress?address=%s"
 	// timeouts
 	getCastByMentionTimeout = 15 * time.Second
 	submitMessageTimeout    = 5 * time.Minute
@@ -162,7 +163,7 @@ func (h *Hub) Reply(ctx context.Context, targetFid uint64, targetHash string, co
 		Fid:       h.fid,
 		Timestamp: uint32(uint64(time.Now().Unix()) - farcasterEpoch),
 		Network:   protobufs.FarcasterNetwork_FARCASTER_NETWORK_MAINNET,
-		Body:      &protobufs.MessageData_CastAddBody{castAdd},
+		Body:      &protobufs.MessageData_CastAddBody{CastAddBody: castAdd},
 	}
 	// marshal the message data
 	msgDataBytes, err := proto.Marshal(msgData)
@@ -218,7 +219,7 @@ func (h *Hub) Reply(ctx context.Context, targetFid uint64, targetHash string, co
 	return nil
 }
 
-func (h *Hub) UserData(ctx context.Context, fid uint64) (*api.Userdata, error) {
+func (h *Hub) UserDataByFID(ctx context.Context, fid uint64) (*api.Userdata, error) {
 	// create a intenal context with a timeout
 	internalCtx, cancel := context.WithTimeout(ctx, userdataTimeout)
 	defer cancel()
@@ -278,7 +279,6 @@ func (h *Hub) UserData(ctx context.Context, fid uint64) (*api.Userdata, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error reading verifications response body: %w", err)
 	}
-	log.Info(string(verificationsBody))
 	// decode verifications json
 	verificationsData := &VerificationsResponse{}
 	if err := json.Unmarshal(verificationsBody, verificationsData); err != nil {
@@ -300,6 +300,10 @@ func (h *Hub) UserData(ctx context.Context, fid uint64) (*api.Userdata, error) {
 		CustodyAddress:         currentUserdata.CustodyAddress,
 		VerificationsAddresses: verifications,
 	}, nil
+}
+
+func (h *Hub) UserDataByVerificationAddress(ctx context.Context, address string) (*api.Userdata, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func (h *Hub) newRequest(ctx context.Context, method string, uri string, body io.Reader) (*http.Request, error) {

@@ -49,3 +49,7 @@ type VerificationMessage struct {
 type VerificationsResponse struct {
 	Messages []*VerificationMessage `json:"messages"`
 }
+
+type FidResponse struct {
+	FID uint64 `json:"fid"`
+}

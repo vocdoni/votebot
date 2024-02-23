@@ -31,14 +31,22 @@ type CastPostRequest struct {
 	Parent string `json:"parent"`
 }
 
-type Userdata struct {
+type UserdataV1 struct {
+	FID                    uint64   `json:"fid"`
 	Username               string   `json:"username"`
 	CustodyAddress         string   `json:"custodyAddress"`
 	VerificationsAddresses []string `json:"verifications"`
 }
 
+type UserdataV2 struct {
+	FID                    uint64   `json:"fid"`
+	Username               string   `json:"username"`
+	CustodyAddress         string   `json:"custody_address"`
+	VerificationsAddresses []string `json:"verifications"`
+}
+
 type UserdataResult struct {
-	User *Userdata `json:"user"`
+	User *UserdataV1 `json:"user"`
 }
 
 type UserdataResponse struct {

@@ -14,10 +14,12 @@ type API interface {
 	// Reply replies to a cast of the given fid with the given hash and content,
 	// it returns an error if something goes wrong
 	Reply(ctx context.Context, fid uint64, hash string, content string) error
-	// UserData retrieves the username, custody address and verification
-	// addresses of the user with the given fid,if something goes wrong, it
-	// returns an error
-	UserData(ctx context.Context, fid uint64) (*Userdata, error)
+	// UserDataByFID retrieves the Userdata of the user with the given fid, if
+	// something goes wrong, it returns an error
+	UserDataByFID(ctx context.Context, fid uint64) (*Userdata, error)
+	// UserDataByVerificationAddress retrieves the Userdata of the user with the
+	// given verification address, if something goes wrong, it returns an error
+	UserDataByVerificationAddress(ctx context.Context, address string) (*Userdata, error)
 }
 
 type APIMessage struct {

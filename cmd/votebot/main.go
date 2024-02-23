@@ -129,7 +129,7 @@ func main() {
 				}
 				// get the user data such as username, custody address and
 				// verification addresses to create the election frame
-				userdata, err := botAPI.UserData(ctx, msg.Author)
+				userdata, err := botAPI.UserDataByFID(ctx, msg.Author)
 				if err != nil {
 					log.Errorf("error getting user data: %s", err)
 					continue
