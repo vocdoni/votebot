@@ -1,4 +1,4 @@
-package bot
+package poll
 
 import (
 	"bufio"
@@ -9,23 +9,34 @@ import (
 )
 
 const (
-	minOptions      = 2
-	maxOptions      = 4
 	optionPrefix    = "-"
 	lineBreakSuffix = "\n"
-	defaultDuration = time.Hour * 24
 )
+
+var DefaultConfig = PollConfig{
+	MinOptions:      2,
+	MaxOptions:      4,
+	MinDuration:     time.Hour,
+	MaxDuration:     time.Hour * 8760, // 1 year
+	DefaultDuration: time.Hour * 24,
+}
+
+type PollConfig struct {
+	MinOptions      int
+	MaxOptions      int
+	MinDuration     time.Duration
+	MaxDuration     time.Duration
+	DefaultDuration time.Duration
+}
 
 // Poll represents a poll with a question, options and duration
 type Poll struct {
-	Author      uint64
-	MessageHash string
-	Question    string
-	Options     []string
-	Duration    time.Duration
+	Question string
+	Options  []string
+	Duration time.Duration
 }
 
-// ParsePoll parses a string message and returns a Poll struct with the
+// ParseString parses a string message and returns a Poll struct with the
 // question, options and duration. The message should follow the format:
 // !poll
 // <question>
@@ -36,13 +47,13 @@ type Poll struct {
 // <duration*>
 // The duration is optional and by default is 24 hours. If the message does not
 // follow the format, an error is returned.
-func ParsePoll(author uint64, messageHash, message string) (*Poll, error) {
+func ParseString(message string, config PollConfig) (*Poll, error) {
 	// create a flag to check if the command has been recognised
 	recognisedCommand := false
 	// create vars to store the question, options and duration
 	var question string
 	var options []string
-	var duration time.Duration = defaultDuration
+	var duration time.Duration = config.DefaultDuration
 	// poll message follows the format:
 	// !poll
 	// <question>
@@ -99,12 +110,15 @@ func ParsePoll(author uint64, messageHash, message string) (*Poll, error) {
 			if duration, err = time.ParseDuration(line); err != nil {
 				return nil, errors.Join(ErrParsingDuration, err)
 			}
+			if duration < config.MinDuration || duration > config.MaxDuration {
+				return nil, fmt.Errorf("duration out of range: %w", ErrParsingDuration)
+			}
 			break
 		}
 		// if the line is an option and the number of options is greater than
 		// the max number of options, return an error
-		if numOfQuestions >= maxOptions {
-			return nil, fmt.Errorf("%w: %d", ErrMaxOptionsReached, maxOptions)
+		if numOfQuestions >= config.MaxOptions {
+			return nil, fmt.Errorf("%w: %d", ErrMaxOptionsReached, config.MaxOptions)
 		}
 		// append the option to the options
 		optionText := strings.TrimSpace(strings.TrimPrefix(line, optionPrefix))
@@ -114,15 +128,13 @@ func ParsePoll(author uint64, messageHash, message string) (*Poll, error) {
 	if question == "" {
 		return nil, ErrQuestionNotSet
 	}
-	if len(options) < minOptions {
-		return nil, fmt.Errorf("%w: %d", ErrMinOptionsNotReached, minOptions)
+	if len(options) < config.MinOptions {
+		return nil, fmt.Errorf("%w: %d", ErrMinOptionsNotReached, config.MinOptions)
 	}
 	// return the results
 	return &Poll{
-		Author:      author,
-		MessageHash: messageHash,
-		Question:    strings.TrimSuffix(question, lineBreakSuffix),
-		Options:     options,
-		Duration:    duration,
+		Question: strings.TrimSuffix(question, lineBreakSuffix),
+		Options:  options,
+		Duration: duration,
 	}, nil
 }

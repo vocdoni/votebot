@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"github.com/vocdoni/votebot/api/hub"
 	"github.com/vocdoni/votebot/api/neynar"
 	"github.com/vocdoni/votebot/bot"
+	"github.com/vocdoni/votebot/election"
+	"github.com/vocdoni/votebot/poll"
 	"go.vocdoni.io/dvote/log"
 )
 
@@ -31,6 +34,8 @@ func main() {
 	hubEndpoint := flag.String("hubEndpoint", "https://hub.freefarcasterhub.com:3281", "hub http API endpoint")
 	hubAuthHeaders := flag.String("hubAuthHeaders", "", "hub auth headers")
 	hubAuthKeys := flag.String("hubAuthKeys", "", "hub auth keys")
+	// onvote flags
+	onvoteEndpoint := flag.String("onvoteEndpoint", "https://dev.farcaster.vote", "onvote frame generator http API endpoint")
 	flag.Parse()
 	// init logger with the given log level
 	log.Init(*logLevel, "stdout", nil)
@@ -88,22 +93,78 @@ func main() {
 	default:
 		log.Fatal("'hub' or 'neynar' mode is required")
 	}
-	// set up the bot with the given configuration
+	// check onvote endpoint
+	if *onvoteEndpoint == "" {
+		log.Fatal("onvote endpoint is required")
+	}
+
+	// set up the bot with the given configuration and the initialized API
 	voteBot, err := bot.New(bot.BotConfig{
-		BotFID:   *botFid,
 		CoolDown: *coolDown,
 		API:      botAPI,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	// set demo callback to return the URL of the vote app
-	voteBot.SetCallback(func(poll *bot.Poll) (string, error) {
-		log.Infow("poll received", "poll", poll)
-		return "https://farcaster.vote/app", nil
-	})
-	// start the bot with a context and a cancel function
+	// start a context and a cancel function for the bot and start listening for
+	// new casts
 	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg := <-voteBot.Messages:
+				// when a new cast is received, check if it is a mention and if
+				// it is not, continue to the next cast
+				if !msg.IsMention {
+					continue
+				}
+				// try to parse the message as a poll, if it fails continue to
+				// the next cast
+				poll, err := poll.ParseString(msg.Content, poll.DefaultConfig)
+				if err != nil {
+					log.Errorf("error parsing poll: %s", err)
+					continue
+				}
+				// get the user data such as username, custody address and
+				// verification addresses to create the election frame
+				username, custodyAddr, verificationAddrs, err := botAPI.UserData(ctx, msg.Author)
+				if err != nil {
+					log.Errorf("error getting user data: %s", err)
+					continue
+				}
+				log.Infow("new poll",
+					"poll", poll,
+					"from", username,
+					"custodyAddr", custodyAddr,
+					"verificationAddrs", verificationAddrs)
+				// create a new poll and send the result to the user
+				frameURL, err := election.FrameElection(ctx, &election.ElectionOptions{
+					BaseEndpoint: *onvoteEndpoint,
+					Author: &election.Profile{
+						FID:           msg.Author,
+						Custody:       custodyAddr,
+						Verifications: verificationAddrs,
+					},
+					Question: poll.Question,
+					Options:  poll.Options,
+					Duration: int(poll.Duration.Hours()),
+				})
+				if err != nil {
+					log.Errorf("error creating election frame: %s", err)
+					continue
+				}
+				// compose the reply text and send it to the user as a reply to
+				// the original cast
+				replyText := fmt.Sprintf("Here is your election 🗳️ frame url! %s", frameURL)
+				if err := botAPI.Reply(ctx, msg.Author, msg.Hash, replyText); err != nil {
+					log.Errorf("error replying to cast: %s", err)
+				}
+			}
+		}
+	}()
+	// start the bot
 	voteBot.Start(ctx)
 	// wait for SIGTERM to cancel the context and stop the bot
 	c := make(chan os.Signal, 1)

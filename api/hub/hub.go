@@ -207,6 +207,10 @@ func (h *Hub) Reply(ctx context.Context, targetFid uint64, targetHash string, co
 	return nil
 }
 
+func (h *Hub) UserData(ctx context.Context, fid uint64) (string, string, []string, error) {
+	return "", "", nil, fmt.Errorf("not implemented")
+}
+
 func (h *Hub) newRequest(ctx context.Context, method string, uri string, body io.Reader) (*http.Request, error) {
 	endpoint := fmt.Sprintf("%s/%s", h.endpoint, uri)
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)

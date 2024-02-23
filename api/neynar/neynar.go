@@ -90,7 +90,9 @@ func (n *NeynarAPI) Init(args ...any) error {
 	}
 	// get bot username
 	var err error
-	if n.username, err = n.botUsername(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), getBotUsernameTimeout)
+	defer cancel()
+	if n.username, _, _, err = n.UserData(ctx, n.fid); err != nil {
 		return fmt.Errorf("error getting bot username: %w", err)
 	}
 	return nil
@@ -207,42 +209,50 @@ func (n *NeynarAPI) Reply(ctx context.Context, fid uint64, parentHash, content s
 	return nil
 }
 
-func (n *NeynarAPI) botUsername() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), getBotUsernameTimeout)
+// UserData method returns the username, the custody address and the
+// verification addresses of the user with the given fid. If something goes
+// wrong, it returns an error.
+func (n *NeynarAPI) UserData(ctx context.Context, fid uint64) (string, string, []string, error) {
+	internalCtx, cancel := context.WithTimeout(ctx, getBotUsernameTimeout)
 	defer cancel()
 
 	// create request with the bot fid
 	baseURL := fmt.Sprintf("%s/%s", n.endpoint, neynarGetUsernameEndpoint)
 	url := fmt.Sprintf(baseURL, n.fid)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(internalCtx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", fmt.Errorf("error creating request: %w", err)
+		return "", "", nil, fmt.Errorf("error creating request: %w", err)
 	}
 	req.Header.Set("api_key", n.apiKey)
 	// send request and check response status
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("error downloading json: %w", err)
+		return "", "", nil, fmt.Errorf("error downloading json: %w", err)
 	}
 	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("error downloading json: %s", res.Status)
+		return "", "", nil, fmt.Errorf("error downloading json: %s", res.Status)
 	}
 	// read response body
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return "", fmt.Errorf("error reading response body: %w", err)
+		return "", "", nil, fmt.Errorf("error reading response body: %w", err)
 	}
 	defer res.Body.Close()
 	// decode username
 	usernameResponse := struct {
 		Result struct {
 			User struct {
-				Username string `json:"username"`
+				Username               string   `json:"username"`
+				CustodyAddress         string   `json:"custodyAddress"`
+				VerificationsAddresses []string `json:"verifications"`
 			} `json:"user"`
 		} `json:"result"`
 	}{}
 	if err := json.Unmarshal(body, &usernameResponse); err != nil {
-		return "", fmt.Errorf("error unmarshalling response body: %w", err)
+		return "", "", nil, fmt.Errorf("error unmarshalling response body: %w", err)
 	}
-	return fmt.Sprintf("@%s", usernameResponse.Result.User.Username), nil
+	return fmt.Sprintf("@%s", usernameResponse.Result.User.Username),
+		usernameResponse.Result.User.CustodyAddress,
+		usernameResponse.Result.User.VerificationsAddresses,
+		nil
 }

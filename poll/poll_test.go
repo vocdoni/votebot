@@ -1,4 +1,4 @@
-package bot
+package poll
 
 import (
 	"testing"
@@ -61,7 +61,7 @@ var (
 	expectedNoDurationPoll = &Poll{
 		Question: "What is your favourite colour?",
 		Options:  []string{"Red", "Blue"},
-		Duration: defaultDuration,
+		Duration: DefaultConfig.DefaultDuration,
 	}
 	expectedNonDefaultDurationPoll = &Poll{
 		Question: "What is your favourite colour?",
@@ -70,33 +70,33 @@ var (
 	}
 )
 
-func TestParsePoll(t *testing.T) {
+func TestParseString(t *testing.T) {
 	c := qt.New(t)
 
-	correctPoll, err := ParsePoll(0, "", correctMessage)
+	correctPoll, err := ParseString(correctMessage, DefaultConfig)
 	c.Assert(err, qt.IsNil)
 	c.Assert(correctPoll.Question, qt.Equals, expectedCorrectPoll.Question)
 	c.Assert(correctPoll.Options, qt.ContentEquals, expectedCorrectPoll.Options)
 	c.Assert(correctPoll.Duration, qt.Equals, expectedCorrectPoll.Duration)
 
-	noDurationPoll, err := ParsePoll(0, "", noDurationMessage)
+	noDurationPoll, err := ParseString(noDurationMessage, DefaultConfig)
 	c.Assert(err, qt.IsNil)
 	c.Assert(noDurationPoll.Question, qt.Equals, expectedNoDurationPoll.Question)
 	c.Assert(noDurationPoll.Options, qt.ContentEquals, expectedNoDurationPoll.Options)
 	c.Assert(noDurationPoll.Duration, qt.Equals, expectedNoDurationPoll.Duration)
 
-	nonDefaultDurationPoll, err := ParsePoll(0, "", nonDefaultDurationMessage)
+	nonDefaultDurationPoll, err := ParseString(nonDefaultDurationMessage, DefaultConfig)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nonDefaultDurationPoll.Question, qt.Equals, expectedNonDefaultDurationPoll.Question)
 	c.Assert(nonDefaultDurationPoll.Options, qt.ContentEquals, expectedNonDefaultDurationPoll.Options)
 	c.Assert(nonDefaultDurationPoll.Duration, qt.Equals, expectedNonDefaultDurationPoll.Duration)
 
-	_, err = ParsePoll(0, "", notEnoughOptionsMessage)
+	_, err = ParseString(notEnoughOptionsMessage, DefaultConfig)
 	c.Assert(err, qt.ErrorIs, ErrMinOptionsNotReached)
 
-	_, err = ParsePoll(0, "", tooManyOptionsMessage)
+	_, err = ParseString(tooManyOptionsMessage, DefaultConfig)
 	c.Assert(err, qt.ErrorIs, ErrMaxOptionsReached)
 
-	_, err = ParsePoll(0, "", invalidDurationMessage)
+	_, err = ParseString(invalidDurationMessage, DefaultConfig)
 	c.Assert(err, qt.ErrorIs, ErrParsingDuration)
 }
