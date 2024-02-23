@@ -23,7 +23,7 @@ type Bot struct {
 	cancel   context.CancelFunc
 	coolDown time.Duration
 	lastCast uint64
-	Messages chan api.APIMessage
+	Messages chan *api.APIMessage
 }
 
 func New(config BotConfig) (*Bot, error) {
@@ -38,7 +38,7 @@ func New(config BotConfig) (*Bot, error) {
 		api:      config.API,
 		coolDown: config.CoolDown,
 		lastCast: uint64(time.Now().Unix()),
-		Messages: make(chan api.APIMessage),
+		Messages: make(chan *api.APIMessage),
 	}, nil
 }
 

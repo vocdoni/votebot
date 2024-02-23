@@ -20,12 +20,21 @@ import (
 )
 
 const (
-	farcasterEpoch           uint64 = 1609459200 // January 1, 2021 UTC
-	ENDPOINT_CAST_BY_MENTION        = "castsByMention?fid=%d"
-	ENDPOINT_SUBMIT_MESSAGE         = "submitMessage"
+	// endpoints
+	ENDPOINT_CAST_BY_MENTION = "castsByMention?fid=%d"
+	ENDPOINT_SUBMIT_MESSAGE  = "submitMessage"
+	ENDPOINT_USERNAME_PROOFS = "userNameProofsByFid?fid=%d"
+	ENDPOINT_VERIFICATIONS   = "verificationsByFid?fid=%d"
 	// timeouts
 	getCastByMentionTimeout = 15 * time.Second
 	submitMessageTimeout    = 5 * time.Minute
+	userdataTimeout         = 15 * time.Second
+	// message types
+	MESSAGE_TYPE_CAST_ADD     = "MESSAGE_TYPE_CAST_ADD"
+	MESSAGE_TYPE_USERPROOF    = "USERNAME_TYPE_FNAME"
+	MESSAGE_TYPE_VERIFICATION = "MESSAGE_TYPE_VERIFICATION_ADD_ETH_ADDRESS"
+	// other constants
+	farcasterEpoch uint64 = 1609459200 // January 1, 2021 UTC
 )
 
 type Hub struct {
@@ -67,8 +76,10 @@ func (h *Hub) Stop() error {
 	return nil
 }
 
-func (h *Hub) LastMentions(ctx context.Context, timestamp uint64) ([]api.APIMessage, uint64, error) {
-	timestamp -= farcasterEpoch
+func (h *Hub) LastMentions(ctx context.Context, timestamp uint64) ([]*api.APIMessage, uint64, error) {
+	if timestamp > farcasterEpoch {
+		timestamp -= farcasterEpoch
+	}
 	internalCtx, cancel := context.WithTimeout(ctx, getCastByMentionTimeout)
 	defer cancel()
 	// download de json from API endpoint
@@ -100,14 +111,14 @@ func (h *Hub) LastMentions(ctx context.Context, timestamp uint64) ([]api.APIMess
 	}
 	// filter messages and calculate the last timestamp
 	lastTimestamp := uint64(0)
-	messages := []api.APIMessage{}
+	messages := []*api.APIMessage{}
 	for _, m := range mentions.Messages {
 		isMention := m.Data.Type == MESSAGE_TYPE_CAST_ADD && m.Data.CastAddBody != nil && m.Data.CastAddBody.Text != ""
 		if !isMention {
 			continue
 		}
 		if m.Data.Timestamp > timestamp {
-			messages = append(messages, api.APIMessage{
+			messages = append(messages, &api.APIMessage{
 				IsMention: true,
 				Content:   m.Data.CastAddBody.Text,
 				Author:    m.Data.From,
@@ -169,16 +180,16 @@ func (h *Hub) Reply(ctx context.Context, targetFid uint64, targetHash string, co
 		Hash:            hash,
 		SignatureScheme: protobufs.SignatureScheme_SIGNATURE_SCHEME_ED25519,
 		Data:            msgData,
+		DataBytes:       msgDataBytes,
 	}
 	// sign the message with the private key
 	privateKey := ed25519.NewKeyFromSeed(h.privKey)
-	signature := ed25519.Sign(privateKey, msgDataBytes)
+	signature := ed25519.Sign(privateKey, hash)
 	signer := privateKey.Public().(ed25519.PublicKey)
 	// set the signature and the signer to the message
 	msg.Signature = signature
 	msg.Signer = signer
-	// set the message data bytes to the message and marshal the message
-	msg.DataBytes = msgDataBytes
+	// marshal the message
 	msgBytes, err := proto.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("error marshalling message: %s", err)
@@ -207,8 +218,88 @@ func (h *Hub) Reply(ctx context.Context, targetFid uint64, targetHash string, co
 	return nil
 }
 
-func (h *Hub) UserData(ctx context.Context, fid uint64) (string, string, []string, error) {
-	return "", "", nil, fmt.Errorf("not implemented")
+func (h *Hub) UserData(ctx context.Context, fid uint64) (*api.Userdata, error) {
+	// create a intenal context with a timeout
+	internalCtx, cancel := context.WithTimeout(ctx, userdataTimeout)
+	defer cancel()
+	// prepare the request to get username and custody address from the API
+	usernameReq, err := h.newRequest(internalCtx, http.MethodGet, fmt.Sprintf(ENDPOINT_USERNAME_PROOFS, fid), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating user data request: %w", err)
+	}
+	// download the user data from the API and check for errors
+	usernameRes, err := http.DefaultClient.Do(usernameReq)
+	if err != nil {
+		return nil, fmt.Errorf("error downloading user data: %w", err)
+	}
+	if usernameRes.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error downloading user data: %s", usernameRes.Status)
+	}
+	// read the response body
+	usernameBody, err := io.ReadAll(usernameRes.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading user data response body: %w", err)
+	}
+	// unmarshal the json
+	userdata := &UserdataResponse{}
+	if err := json.Unmarshal(usernameBody, userdata); err != nil {
+		return nil, fmt.Errorf("error unmarshalling user data: %w", err)
+	}
+	// get the latest proof
+	currentUserdata := &UsernameProofs{}
+	lastUserdataTimestamp := uint64(0)
+	for _, proof := range userdata.Proofs {
+		// discard proofs that are not of the type we are looking for and
+		// that are not from the user we are looking for
+		if proof.Type != MESSAGE_TYPE_USERPROOF || proof.FID != fid {
+			continue
+		}
+		// update the latest proof
+		if proof.Timestamp > lastUserdataTimestamp {
+			currentUserdata = proof
+			lastUserdataTimestamp = proof.Timestamp
+		}
+	}
+	// prepare the request to get verifications from the API
+	verificationsReq, err := h.newRequest(internalCtx, http.MethodGet, fmt.Sprintf(ENDPOINT_VERIFICATIONS, fid), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating verifications request: %w", err)
+	}
+	// download the verifications from the API and check for errors
+	verificationsRes, err := http.DefaultClient.Do(verificationsReq)
+	if err != nil {
+		return nil, fmt.Errorf("error downloading verifications: %w", err)
+	}
+	if verificationsRes.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error downloading verifications: %s", verificationsRes.Status)
+	}
+	// read the response body
+	verificationsBody, err := io.ReadAll(verificationsRes.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading verifications response body: %w", err)
+	}
+	log.Info(string(verificationsBody))
+	// decode verifications json
+	verificationsData := &VerificationsResponse{}
+	if err := json.Unmarshal(verificationsBody, verificationsData); err != nil {
+		return nil, fmt.Errorf("error unmarshalling verifications: %w", err)
+	}
+	// filter verifications addresses
+	verifications := []string{}
+	for _, msg := range verificationsData.Messages {
+		// if no data or verification data is found, skip. If the message data
+		// type is not the one we are looking for, skip
+		if msg.Data == nil || msg.Data.Type != MESSAGE_TYPE_VERIFICATION || msg.Data.Verification == nil {
+			continue
+		}
+		verifications = append(verifications, msg.Data.Verification.Address)
+	}
+	return &api.Userdata{
+		FID:                    fid,
+		Username:               currentUserdata.Username,
+		CustodyAddress:         currentUserdata.CustodyAddress,
+		VerificationsAddresses: verifications,
+	}, nil
 }
 
 func (h *Hub) newRequest(ctx context.Context, method string, uri string, body io.Reader) (*http.Request, error) {

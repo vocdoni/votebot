@@ -27,37 +27,6 @@ const (
 	timeLayout        = "2006-01-02T15:04:05.000Z"
 )
 
-type NotificationAuthor struct {
-	FID uint64 `json:"fid"`
-}
-
-type Notification struct {
-	Hash      string             `json:"hash"`
-	Author    NotificationAuthor `json:"author"`
-	Type      string             `json:"type"`
-	Text      string             `json:"text"`
-	Timestamp string             `json:"timestamp"`
-}
-
-type NextNotificationCursor struct {
-	Cursor string `json:"cursor"`
-}
-
-type NotificationsResult struct {
-	Notifications []*Notification        `json:"notifications"`
-	NextCursor    NextNotificationCursor `json:"next"`
-}
-
-type NotificationsResponse struct {
-	Result *NotificationsResult `json:"result"`
-}
-
-type CastPostRequest struct {
-	Signer string `json:"signer_uuid"`
-	Text   string `json:"text"`
-	Parent string `json:"parent"`
-}
-
 type NeynarAPI struct {
 	fid        uint64
 	username   string
@@ -92,9 +61,11 @@ func (n *NeynarAPI) Init(args ...any) error {
 	var err error
 	ctx, cancel := context.WithTimeout(context.Background(), getBotUsernameTimeout)
 	defer cancel()
-	if n.username, _, _, err = n.UserData(ctx, n.fid); err != nil {
+	userdata, err := n.UserData(ctx, n.fid)
+	if err != nil {
 		return fmt.Errorf("error getting bot username: %w", err)
 	}
+	n.username = userdata.Username
 	return nil
 }
 
@@ -102,13 +73,13 @@ func (n *NeynarAPI) Stop() error {
 	return nil
 }
 
-func (n *NeynarAPI) LastMentions(ctx context.Context, timestamp uint64) ([]api.APIMessage, uint64, error) {
+func (n *NeynarAPI) LastMentions(ctx context.Context, timestamp uint64) ([]*api.APIMessage, uint64, error) {
 	baseURL := fmt.Sprintf("%s/%s", n.endpoint, neynarGetCastsEndpoint)
 
 	internalCtx, cancel := context.WithTimeout(ctx, getCastByMentionTimeout)
 	defer cancel()
 
-	messages := []api.APIMessage{}
+	messages := []*api.APIMessage{}
 	lastTimestamp := timestamp
 	cursor := ""
 	for {
@@ -157,7 +128,7 @@ func (n *NeynarAPI) LastMentions(ctx context.Context, timestamp uint64) ([]api.A
 			// parse the text to remove the bot username and add mention to the
 			// list
 			text := strings.TrimSpace(strings.TrimPrefix(notification.Text, n.username))
-			messages = append(messages, api.APIMessage{
+			messages = append(messages, &api.APIMessage{
 				IsMention: true,
 				Author:    notification.Author.FID,
 				Content:   text,
@@ -212,7 +183,7 @@ func (n *NeynarAPI) Reply(ctx context.Context, fid uint64, parentHash, content s
 // UserData method returns the username, the custody address and the
 // verification addresses of the user with the given fid. If something goes
 // wrong, it returns an error.
-func (n *NeynarAPI) UserData(ctx context.Context, fid uint64) (string, string, []string, error) {
+func (n *NeynarAPI) UserData(ctx context.Context, fid uint64) (*api.Userdata, error) {
 	internalCtx, cancel := context.WithTimeout(ctx, getBotUsernameTimeout)
 	defer cancel()
 
@@ -221,38 +192,32 @@ func (n *NeynarAPI) UserData(ctx context.Context, fid uint64) (string, string, [
 	url := fmt.Sprintf(baseURL, n.fid)
 	req, err := http.NewRequestWithContext(internalCtx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("error creating request: %w", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 	req.Header.Set("api_key", n.apiKey)
 	// send request and check response status
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("error downloading json: %w", err)
+		return nil, fmt.Errorf("error downloading json: %w", err)
 	}
 	if res.StatusCode != http.StatusOK {
-		return "", "", nil, fmt.Errorf("error downloading json: %s", res.Status)
+		return nil, fmt.Errorf("error downloading json: %s", res.Status)
 	}
 	// read response body
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("error reading response body: %w", err)
+		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 	defer res.Body.Close()
 	// decode username
-	usernameResponse := struct {
-		Result struct {
-			User struct {
-				Username               string   `json:"username"`
-				CustodyAddress         string   `json:"custodyAddress"`
-				VerificationsAddresses []string `json:"verifications"`
-			} `json:"user"`
-		} `json:"result"`
-	}{}
-	if err := json.Unmarshal(body, &usernameResponse); err != nil {
-		return "", "", nil, fmt.Errorf("error unmarshalling response body: %w", err)
+	usernameResponse := &UserdataResponse{}
+	if err := json.Unmarshal(body, usernameResponse); err != nil {
+		return nil, fmt.Errorf("error unmarshalling response body: %w", err)
 	}
-	return fmt.Sprintf("@%s", usernameResponse.Result.User.Username),
-		usernameResponse.Result.User.CustodyAddress,
-		usernameResponse.Result.User.VerificationsAddresses,
-		nil
+	return &api.Userdata{
+		FID:                    fid,
+		Username:               usernameResponse.Result.User.Username,
+		CustodyAddress:         usernameResponse.Result.User.CustodyAddress,
+		VerificationsAddresses: usernameResponse.Result.User.VerificationsAddresses,
+	}, nil
 }

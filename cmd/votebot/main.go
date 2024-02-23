@@ -129,23 +129,21 @@ func main() {
 				}
 				// get the user data such as username, custody address and
 				// verification addresses to create the election frame
-				username, custodyAddr, verificationAddrs, err := botAPI.UserData(ctx, msg.Author)
+				userdata, err := botAPI.UserData(ctx, msg.Author)
 				if err != nil {
 					log.Errorf("error getting user data: %s", err)
 					continue
 				}
 				log.Infow("new poll",
 					"poll", poll,
-					"from", username,
-					"custodyAddr", custodyAddr,
-					"verificationAddrs", verificationAddrs)
+					"userdata", userdata)
 				// create a new poll and send the result to the user
 				frameURL, err := election.FrameElection(ctx, &election.ElectionOptions{
 					BaseEndpoint: *onvoteEndpoint,
 					Author: &election.Profile{
 						FID:           msg.Author,
-						Custody:       custodyAddr,
-						Verifications: verificationAddrs,
+						Custody:       userdata.CustodyAddress,
+						Verifications: userdata.VerificationsAddresses,
 					},
 					Question: poll.Question,
 					Options:  poll.Options,
